@@ -111,9 +111,9 @@ class _HomePageState extends State<HomePage> {
             itemCount: names.length,
             itemBuilder: (context, index) => pw.Column(
               children: [
-                pw.Text(names[index], style: pw.TextStyle(fontSize: 24)),
-                pw.Padding(padding: const pw.EdgeInsets.all(10)),
-                pw.Image(imageProvider, height: 200, width: 200),
+                pw.Text(names[index], style: pw.TextStyle(fontSize: 10)),
+                pw.Padding(padding: const pw.EdgeInsets.all(5)),
+                //pw.Image(imageProvider, height: 200, width: 200),
                 //pw.Divider(color: PdfColors.black),
               ],
             ),
