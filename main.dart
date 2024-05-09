@@ -3,10 +3,11 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:image_picker/image_picker.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:intl/intl.dart'; 
+import 'package:flutter/services.dart';
 
 void main() {
   runApp(MyApp());
@@ -48,8 +49,20 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> takeAndSendPicture() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.camera);
+
+    if (pickedFile != null) {
+      _image = File(pickedFile.path);
+      await recognizeFaces();
+    } else {
+      print('No image selected.');
+    }
+  }
+
   Future<void> recognizeFaces() async {
-    const apiUrl = 'http://10.1.144.71:5000/recognize';
+    const apiUrl = 'http://10.1.146.205:5000/recognize';
     String img;
 
     if (_image != null) {
@@ -57,73 +70,83 @@ class _HomePageState extends State<HomePage> {
       var fparts = _image!.path.split('/').last.split('.');
       var ext = fparts.last;
       img = 'data:image/$ext;base64,${base64Encode(fileBytes)}';
-    } else {
-      throw Exception("Error: _image is null");
-    }
 
-    try {
-      final res = await http.post(
-        Uri.parse(apiUrl),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({"image": img}),
-      );
+      try {
+        final res = await http.post(
+          Uri.parse(apiUrl),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({"image": img}),
+        );
 
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        String base64Image = data["image"].split(',').last;
-        Uint8List bytes = base64Decode(base64Image);
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body);
+          String base64Image = data["image"].split(',').last;
+          Uint8List bytes = base64Decode(base64Image);
 
-        List<String> faces = List<String>.from(data["recognized_faces"]);
-        faces.removeWhere((name) => name.trim().toLowerCase() == "unknown");
+          List<String> faces = List<String>.from(data["recognized_faces"]);
+          faces.removeWhere((name) => name.trim().toLowerCase() == "unknown");
 
+          setState(() {
+            //recognizedFaces = 'Recognized faces: ${faces.isNotEmpty ? faces.join(', ') : "No known faces recognized"}';
+            recognizedNames = faces;
+            output = bytes;
+          });
+        } else {
+          setState(() {
+            errorMessage = 'Error: ${res.statusCode}';
+          });
+        }
+      } catch (e) {
         setState(() {
-          recognizedFaces = 'Recognized faces: ${faces.isNotEmpty ? faces.join(', ') : "No known faces recognized"}';
-          recognizedNames = faces;
-          output = bytes;
-        });
-      } else {
-        setState(() {
-          errorMessage = 'Error: ${res.statusCode}';
+          errorMessage = 'Error: $e';
         });
       }
-    } catch (e) {
-      setState(() {
-        errorMessage = 'Error: $e';
-      });
+    } else {
+      throw Exception("Error: _image is null");
     }
   }
 
   Future<void> generateAndSavePdf(List<String> names, Uint8List image) async {
-    final pdf = pw.Document();
-    final imageProvider = pw.MemoryImage(image);
+  final pdf = pw.Document();
+  final imageProvider = pw.MemoryImage(image);
 
-    try {
-      final file = File('recognized_names.txt');
-      await file.writeAsString(names.join('\n'));
-    } catch (e) {
-      print('Error saving recognized names: $e');
-    }
+  // Get today's date and day
+  final now = DateTime.now();
+  final DateFormat formatter = DateFormat('dd-MM-yyyy');
+  final String formattedDate = formatter.format(now);
+  final String formattedDay = DateFormat('EEEE').format(now);
 
-    pdf.addPage(
-      pw.Page(
-        build: (pw.Context context) {
-          return pw.ListView.builder(
-            itemCount: names.length,
-            itemBuilder: (context, index) => pw.Column(
+  // Instructor's name
+  final String instructorName = 'Dr. Ali Imran Sandhu';
+
+  pdf.addPage(
+    pw.Page(
+      build: (pw.Context context) {
+        return pw.ListView(
+          children: [
+            // Add date, day, and instructor's name
+            pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                pw.Text(names[index], style: pw.TextStyle(fontSize: 10)),
-                pw.Padding(padding: const pw.EdgeInsets.all(5)),
-                //pw.Image(imageProvider, height: 200, width: 200),
-                //pw.Divider(color: PdfColors.black),
+                pw.Text('Date: $formattedDate', style: pw.TextStyle(fontSize: 12)),
+                pw.Text('Day: $formattedDay', style: pw.TextStyle(fontSize: 12)),
               ],
             ),
-          );
-        },
-      ),
-    );
+            pw.Text('Instructor: $instructorName', style: pw.TextStyle(fontSize: 12)),
+            pw.Divider(),
+            pw.Text('Students Present:', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+            for (var name in names)
+              pw.Text(name, style: pw.TextStyle(fontSize: 15)),
+            pw.Image(imageProvider),
+          ],
+        );
+      },
+    ),
+  );
 
-    await Printing.sharePdf(bytes: await pdf.save(), filename: 'RecognizedFaces.pdf');
-  }
+  final pdfBytes = await pdf.save();
+  await Printing.sharePdf(bytes: pdfBytes, filename: 'Attendance.pdf');
+}
 
   @override
   Widget build(BuildContext context) {
@@ -175,6 +198,10 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: takeAndSendPicture,
+        child: Icon(Icons.camera_alt),
       ),
     );
   }
